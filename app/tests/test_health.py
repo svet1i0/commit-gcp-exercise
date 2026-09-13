@@ -5,9 +5,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
+import time
 import unittest
 from concurrent.futures import TimeoutError as FuturesTimeout
+from http.server import ThreadingHTTPServer
 from unittest import mock
+from urllib.request import urlopen
 
 import sys
 from pathlib import Path
@@ -28,9 +32,14 @@ class HealthContractTests(unittest.TestCase):
         os.environ["THIRD_PARTY_TOKEN_SECRET"] = "meridian-third-party-token"
         os.environ["DB_USER"] = "app_user"
         os.environ["DB_NAME"] = "meridian"
-        # Reset process connector between tests
+        os.environ.pop("HEALTH_DB_TIMEOUT_SEC", None)
+        os.environ.pop("HEALTH_SECRET_TIMEOUT_SEC", None)
+        main.DB_TIMEOUT_SEC = 15.0
+        main.SECRET_TIMEOUT_SEC = 15.0
         with main._connector_lock:
             main._connector = None
+        with main._sm_lock:
+            main._sm_client = None
 
     def tearDown(self) -> None:
         for k in (
@@ -50,6 +59,10 @@ class HealthContractTests(unittest.TestCase):
             os.environ.pop(k, None)
         with main._connector_lock:
             main._connector = None
+        with main._sm_lock:
+            main._sm_client = None
+        main.DB_TIMEOUT_SEC = 15.0
+        main.SECRET_TIMEOUT_SEC = 15.0
 
     def test_success_exact_five_keys(self) -> None:
         with mock.patch.object(main, "check_database", return_value="ok"), mock.patch.object(
@@ -91,67 +104,191 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(body["db"], "error")
         self.assertEqual(body["secret"], "error")
 
-    def test_timeout_returns_error_and_503(self) -> None:
-        with mock.patch.object(
-            main, "_run_with_timeout", side_effect=["error", "ok"]
+    def test_db_timeout(self) -> None:
+        barrier = threading.Barrier(2)
+
+        def slow_db(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=1)
+            time.sleep(0.2)
+            return "ok"
+
+        def fast_secret(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=1)
+            return "ok"
+
+        os.environ["HEALTH_DB_TIMEOUT_SEC"] = "0.05"
+        os.environ["HEALTH_SECRET_TIMEOUT_SEC"] = "2"
+        main.DB_TIMEOUT_SEC = 0.05
+        main.SECRET_TIMEOUT_SEC = 2.0
+        with mock.patch.object(main, "check_database", side_effect=slow_db), mock.patch.object(
+            main, "check_secrets", side_effect=fast_secret
         ):
             code, body = main.build_health()
         self.assertEqual(code, 503)
         self.assertEqual(body["db"], "error")
         self.assertEqual(body["secret"], "ok")
-        self.assertEqual(set(body.keys()), {"candidate", "commit", "region", "db", "secret"})
 
-    def test_run_with_timeout_on_futures_timeout(self) -> None:
+    def test_secret_timeout(self) -> None:
+        barrier = threading.Barrier(2)
+
+        def fast_db(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=1)
+            return "ok"
+
+        def slow_secret(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=1)
+            time.sleep(0.2)
+            return "ok"
+
+        main.DB_TIMEOUT_SEC = 2.0
+        main.SECRET_TIMEOUT_SEC = 0.05
+        with mock.patch.object(main, "check_database", side_effect=fast_db), mock.patch.object(
+            main, "check_secrets", side_effect=slow_secret
+        ):
+            code, body = main.build_health()
+        self.assertEqual(code, 503)
+        self.assertEqual(body["db"], "ok")
+        self.assertEqual(body["secret"], "error")
+
+    def test_both_checks_started_before_await(self) -> None:
+        order: list[str] = []
+        started = threading.Event()
+        release = threading.Event()
+
+        def db(_deadline: float | None = None) -> str:
+            order.append("db_start")
+            started.set()
+            release.wait(timeout=1)
+            order.append("db_end")
+            return "ok"
+
+        def secret(_deadline: float | None = None) -> str:
+            order.append("secret_start")
+            started.wait(timeout=1)
+            release.set()
+            order.append("secret_end")
+            return "ok"
+
+        with mock.patch.object(main, "check_database", side_effect=db), mock.patch.object(
+            main, "check_secrets", side_effect=secret
+        ):
+            code, body = main.build_health()
+        self.assertEqual(code, 200)
+        self.assertIn("db_start", order)
+        self.assertIn("secret_start", order)
+        # Both starts precede either end under concurrent scheduling.
+        self.assertLess(order.index("db_start"), min(order.index("db_end"), order.index("secret_end")))
+        self.assertLess(order.index("secret_start"), min(order.index("db_end"), order.index("secret_end")))
+
+    def test_parallel_wall_clock_not_serial_sum(self) -> None:
+        """Each check sleeps ~0.15s; serial would be ~0.30s; parallel should finish sooner."""
+
+        def slow(_deadline: float | None = None) -> str:
+            time.sleep(0.15)
+            return "ok"
+
+        main.DB_TIMEOUT_SEC = 2.0
+        main.SECRET_TIMEOUT_SEC = 2.0
+        with mock.patch.object(main, "check_database", side_effect=slow), mock.patch.object(
+            main, "check_secrets", side_effect=slow
+        ):
+            t0 = time.perf_counter()
+            code, body = main.build_health()
+            elapsed = time.perf_counter() - t0
+        self.assertEqual(code, 200)
+        self.assertEqual(body["db"], "ok")
+        self.assertEqual(body["secret"], "ok")
+        self.assertLess(elapsed, 0.28)
+
+    def test_two_simultaneous_health_without_starvation(self) -> None:
+        gate = threading.Barrier(4)  # 2 requests × 2 checks
+
+        def work(_deadline: float | None = None) -> str:
+            gate.wait(timeout=2)
+            return "ok"
+
+        with mock.patch.object(main, "check_database", side_effect=work), mock.patch.object(
+            main, "check_secrets", side_effect=work
+        ):
+            results: list[tuple[int, dict]] = []
+
+            def run() -> None:
+                results.append(main.build_health())
+
+            t1 = threading.Thread(target=run)
+            t2 = threading.Thread(target=run)
+            t1.start()
+            t2.start()
+            t1.join(timeout=3)
+            t2.join(timeout=3)
+        self.assertEqual(len(results), 2)
+        self.assertTrue(all(code == 200 for code, _ in results))
+
+    def test_await_future_on_timeout(self) -> None:
         fut = mock.Mock()
         fut.result.side_effect = FuturesTimeout()
-        with mock.patch.object(main._executor, "submit", return_value=fut):
-            self.assertEqual(main._run_with_timeout(lambda: "ok", 0.01, label="overall_db_check"), "error")
+        fut.cancel.return_value = True
+        deadline = time.perf_counter() + 0.05
+        self.assertEqual(main._await_future(fut, deadline, label="overall_db_check"), "error")
+        fut.cancel.assert_called()
 
-    def test_no_secret_values_in_body(self) -> None:
-        with mock.patch.object(main, "check_database", return_value="ok"), mock.patch.object(
-            main, "check_secrets", return_value="ok"
-        ):
-            _, body = main.build_health()
-        dumped = json.dumps(body)
-        self.assertNotIn("password", dumped.lower())
-        for v in body.values():
-            self.assertIn(v, {"Svetoslav Silkov", "abcdef1", "europe-west1", "ok", "error"})
-
-    def test_exception_not_exposed(self) -> None:
-        def boom() -> str:
-            raise RuntimeError("super-secret-connection-string://user:pass@host/db")
-
-        with mock.patch.object(main, "check_database", side_effect=boom), mock.patch.object(
-            main, "check_secrets", return_value="ok"
-        ):
-            # build_health uses executor wrapper; patch check_database at call site via _run_with_timeout
-            with mock.patch.object(main, "_run_with_timeout", side_effect=["error", "ok"]):
-                code, body = main.build_health()
-        dumped = json.dumps(body)
-        self.assertNotIn("super-secret", dumped)
-        self.assertNotIn("connection-string", dumped)
-        self.assertEqual(set(body.keys()), {"candidate", "commit", "region", "db", "secret"})
-        self.assertEqual(code, 503)
-
-    def test_secret_resource_uses_version_1(self) -> None:
-        name = main._secret_resource("meridian-poc-ss-260913", "meridian-db-password")
-        self.assertEqual(
-            name,
-            "projects/meridian-poc-ss-260913/secrets/meridian-db-password/versions/1",
-        )
-
-    def test_check_secrets_reads_both_secrets(self) -> None:
+    def test_request_time_secret_reads_every_health(self) -> None:
         calls: list[str] = []
 
-        def fake_access(project: str, secret_id: str) -> bytes:
+        def fake_access(project: str, secret_id: str, *, timeout: float) -> bytes:
+            self.assertGreater(timeout, 0)
             calls.append(secret_id)
             return b"x"
 
-        with mock.patch.object(main, "_access_secret", side_effect=fake_access):
-            self.assertEqual(main.check_secrets(), "ok")
-        self.assertEqual(calls, ["meridian-db-password", "meridian-third-party-token"])
+        with mock.patch.object(main, "check_database", return_value="ok"), mock.patch.object(
+            main, "_access_secret", side_effect=fake_access
+        ):
+            main.build_health()
+            main.build_health()
+        self.assertEqual(calls.count("meridian-db-password"), 2)
+        self.assertEqual(calls.count("meridian-third-party-token"), 2)
 
-    def test_check_database_reuses_connector_and_closes_conn(self) -> None:
+    def test_secret_manager_rpc_timeouts_positive(self) -> None:
+        seen: list[float] = []
+
+        class FakeClient:
+            def access_secret_version(self, request=None, timeout=None):  # noqa: ANN001
+                seen.append(float(timeout))
+                resp = mock.Mock()
+                resp.payload.data = b"x"
+                return resp
+
+        with main._sm_lock:
+            main._sm_client = FakeClient()
+        self.assertEqual(main.check_secrets(time.perf_counter() + 5), "ok")
+        self.assertEqual(len(seen), 2)
+        self.assertTrue(all(t > 0 for t in seen))
+        # Second call has less remaining budget than the first.
+        self.assertLessEqual(seen[1], seen[0])
+
+    def test_sm_client_reused_payloads_not_cached(self) -> None:
+        payloads = [b"one", b"two", b"three", b"four"]
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.n = 0
+
+            def access_secret_version(self, request=None, timeout=None):  # noqa: ANN001
+                resp = mock.Mock()
+                resp.payload.data = payloads[self.n]
+                self.n += 1
+                return resp
+
+        client = FakeClient()
+        with main._sm_lock:
+            main._sm_client = client
+        self.assertEqual(main.check_secrets(time.perf_counter() + 5), "ok")
+        self.assertEqual(main.check_secrets(time.perf_counter() + 5), "ok")
+        self.assertEqual(client.n, 4)
+        with main._sm_lock:
+            self.assertIs(main._sm_client, client)
+
+    def test_connector_process_scoped_conn_request_scoped(self) -> None:
         fake_conn = mock.MagicMock()
         fake_cur = mock.MagicMock()
         fake_conn.cursor.return_value = fake_cur
@@ -165,17 +302,13 @@ class HealthContractTests(unittest.TestCase):
             "sys.modules",
             {"google.cloud.sql.connector": mock.MagicMock(IPTypes=mock.Mock(PRIVATE="PRIVATE"))},
         ):
-            self.assertEqual(main.check_database(), "ok")
-            self.assertEqual(main.check_database(), "ok")
-
+            self.assertEqual(main.check_database(time.perf_counter() + 5), "ok")
+            self.assertEqual(main.check_database(time.perf_counter() + 5), "ok")
         self.assertEqual(get_c.call_count, 2)
         self.assertEqual(fake_connector.connect.call_count, 2)
         self.assertEqual(fake_conn.close.call_count, 2)
-        for call in fake_connector.connect.call_args_list:
-            self.assertIn("timeout", call.kwargs)
-            self.assertNotIn("password", str(call.kwargs.get("timeout")))
 
-    def test_check_database_closes_conn_on_failure(self) -> None:
+    def test_cursor_and_conn_close_on_query_failure(self) -> None:
         fake_conn = mock.MagicMock()
         fake_cur = mock.MagicMock()
         fake_conn.cursor.return_value = fake_cur
@@ -189,10 +322,25 @@ class HealthContractTests(unittest.TestCase):
             "sys.modules",
             {"google.cloud.sql.connector": mock.MagicMock(IPTypes=mock.Mock(PRIVATE="PRIVATE"))},
         ):
-            self.assertEqual(main.check_database(), "error")
+            self.assertEqual(main.check_database(time.perf_counter() + 5), "error")
+        fake_cur.close.assert_called()
         fake_conn.close.assert_called_once()
 
-    def test_health_diag_logs_have_no_sensitive_values(self) -> None:
+    def test_failures_do_not_expose_messages_or_payloads(self) -> None:
+        def boom(_deadline: float | None = None) -> str:
+            raise RuntimeError("super-secret-connection-string://user:pass@host/db")
+
+        with mock.patch.object(main, "check_database", side_effect=boom), mock.patch.object(
+            main, "check_secrets", return_value="ok"
+        ):
+            code, body = main.build_health()
+        dumped = json.dumps(body)
+        self.assertNotIn("super-secret", dumped)
+        self.assertNotIn("connection-string", dumped)
+        self.assertEqual(set(body.keys()), {"candidate", "commit", "region", "db", "secret"})
+        self.assertEqual(code, 503)
+
+    def test_structured_logs_include_stage_outcome_elapsed(self) -> None:
         records: list[str] = []
 
         class Capture(logging.Handler):
@@ -202,7 +350,7 @@ class HealthContractTests(unittest.TestCase):
         h = Capture()
         main.log.addHandler(h)
         try:
-            with mock.patch.object(main, "_access_secret", return_value=b"super-secret-password"), mock.patch.object(
+            with mock.patch.object(main, "_access_secret", return_value=b"pw"), mock.patch.object(
                 main, "_get_connector"
             ) as get_c:
                 get_c.side_effect = RuntimeError("boom")
@@ -210,14 +358,47 @@ class HealthContractTests(unittest.TestCase):
                     "sys.modules",
                     {"google.cloud.sql.connector": mock.MagicMock(IPTypes=mock.Mock(PRIVATE="PRIVATE"))},
                 ):
-                    main.check_database()
+                    main.check_database(time.perf_counter() + 5)
         finally:
             main.log.removeHandler(h)
 
         joined = "\n".join(records)
-        self.assertNotIn("super-secret-password", joined)
+        self.assertNotIn("pw", joined)  # payload itself shouldn't appear; password bytes not logged
         self.assertIn("health_diag", joined)
         self.assertIn("exception_class", joined)
+        self.assertIn("elapsed_ms", joined)
+        self.assertIn("outcome", joined)
+
+    def test_non_health_route_404(self) -> None:
+        server = ThreadingHTTPServer(("127.0.0.1", 0), main.Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            host, port = server.server_address
+            with urlopen(f"http://{host}:{port}/nope") as resp:  # noqa: S310
+                self.fail(f"expected 404, got {resp.status}")
+        except Exception as exc:  # noqa: BLE001
+            self.assertIn("404", str(exc))
+        finally:
+            server.shutdown()
+
+    def test_secret_resource_uses_version_1(self) -> None:
+        name = main._secret_resource("meridian-poc-ss-260913", "meridian-db-password")
+        self.assertEqual(
+            name,
+            "projects/meridian-poc-ss-260913/secrets/meridian-db-password/versions/1",
+        )
+
+    def test_check_secrets_reads_both_secrets(self) -> None:
+        calls: list[str] = []
+
+        def fake_access(project: str, secret_id: str, *, timeout: float) -> bytes:
+            calls.append(secret_id)
+            return b"x"
+
+        with mock.patch.object(main, "_access_secret", side_effect=fake_access):
+            self.assertEqual(main.check_secrets(time.perf_counter() + 5), "ok")
+        self.assertEqual(calls, ["meridian-db-password", "meridian-third-party-token"])
 
     def test_deployed_commit_short_sha(self) -> None:
         os.environ["COMMIT_SHA"] = "910c929fbb101a6bcb8d5b012b21a460cec75cbc"

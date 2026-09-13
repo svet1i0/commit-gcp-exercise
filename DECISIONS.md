@@ -79,3 +79,11 @@ See [ACCESS-MODEL.md](ACCESS-MODEL.md).
 **Rationale:** scalable onboarding/offboarding; stable IAM policies; auditability; separation of identity lifecycle from cloud resource deployment; least privilege; multi-company support.
 
 **Alternatives rejected:** individual IAM grants for every employee/vendor; broad organization-level roles; creating Google accounts manually for every external user; conflating human Workforce federation with workload WIF; inventing confirmation of principal type.
+
+## Health reliability and concurrency (POC)
+
+- Process-scoped Cloud SQL Connector (`lazy`) + process-scoped Secret Manager client; short-lived DB connections and request-time secret payload reads every `/health`.
+- DB and secret checks **start concurrently** on a four-worker process-scoped executor; wall-clock budget ≈ max(DB, secret), not the serial sum.
+- Cloud Run `max_instance_request_concurrency = 2` deliberately aligns with 2 concurrent requests × 2 dependency tasks = 4 workers.
+- `min_instance_count` remains 0 (no permanent warm capacity claim).
+

@@ -20,6 +20,9 @@
 | A-016 | Production group names / Workforce Identity Federation are recommendations only — **not implemented**; POC may bind an **externally managed** group email without creating/administering that group | Time-boxed POC; no customer identity directory control | Create groups/federation later | DOCUMENTED |
 | A-017 | External group membership depends on identity provider + organization policy (`allowedPolicyMemberDomains` etc.); IAM apply ≠ login proof | Org allows broad domains in this Free Trial org | External reviewers blocked if policy tightens or membership empty | DOCUMENTED |
 | A-018 | Final active minutes remain outstanding until `FINAL_CONFIRMED_ACTIVE_MINUTES` is provided | Time tracking paused; do not invent totals | Submission time claim blocked | DOCUMENTED |
+| A-019 | Cloud Run `max_instance_request_concurrency=2` aligns with the app’s four-worker dependency executor (2 requests × 2 checks) | Prevents unbounded in-process queueing under default Cloud Run concurrency | Raise concurrency only with matching executor capacity | DOCUMENTED |
+| A-020 | DB and Secret Manager health checks start concurrently and share a common request-start wall-clock budget (≈ max of budgets, not sum) | Independent checks must both run without serializing cold-start latency | Tune budgets independently if one dependency dominates | DOCUMENTED |
+| A-021 | Process-scoped Cloud SQL Connector and Secret Manager client; request-time payloads/queries are never cached for health results | Amortize client/connector setup without weakening request-time checks | Restart process to refresh clients | DOCUMENTED |
 
 ## Unanswered Meridian questions (Q1–Q34)
 

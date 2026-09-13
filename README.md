@@ -4,7 +4,7 @@
 
 ## Architecture
 
-Public **Cloud Run** API → Direct VPC egress (custom VPC) → private Cloud SQL PostgreSQL 15 + Secret Manager. Terraform + GCS remote state. Runtime DB: `app_user` via Cloud SQL Connector (`PRIVATE`). Migrator: IAM DB user (Cloud Run Job). Exactly two secrets; request-time Secret Manager reads (version 1). WIF: **NOT IMPLEMENTED**.
+Public **Cloud Run** API → Direct VPC egress → private Cloud SQL PostgreSQL 15 + Secret Manager. Terraform + GCS remote state. Runtime DB via Cloud SQL Connector (`PRIVATE`). Migrator: IAM DB user (Cloud Run Job). Exactly two secrets; request-time Secret Manager reads (version 1). Cloud Run `max_instance_request_concurrency=2` (aligned with a four-worker in-process dependency executor). WIF: **NOT IMPLEMENTED**.
 
 ## Repository and run
 
@@ -13,24 +13,24 @@ Public **Cloud Run** API → Direct VPC egress (custom VPC) → private Cloud SQ
 | Public repo | https://github.com/svet1i0/commit-gcp-exercise |
 | Branch | `main` |
 | Health | https://meridian-api-rgi4x3jv2a-ew.a.run.app/health |
-| Deployed source SHA | `2ef5b73638c6f9d0e517073e42791fc4d3c8a243` |
-| Image digest | `sha256:54835dd941d0ac456b62ebfab068730c3f2f4f774319bd2ea9fa1c9fe18c2260` |
-| Serving revision | `meridian-api-00003-ssq` (100% traffic) |
+| Deployed source SHA | *(set after Prompt 3 redeploy)* |
+| Image digest | *(set after Prompt 3 redeploy)* |
+| Serving revision | *(set after Prompt 3 redeploy)* |
 
 ```bash
 curl -sS https://meridian-api-rgi4x3jv2a-ew.a.run.app/health
 ```
 
-Post-deployment validation: **12/12** requests returned HTTP 200 at **2026-09-13T15:10:41Z–15:10:50Z** (`db=ok`, `secret=ok`, five-field contract). One request aligned with revision startup (`DEPLOYMENT_ROLLOUT` / connector init). Not a claim of permanent health under all future cold starts.
+Post-deployment validation will be recorded after the reliability redeploy (sequential + concurrent). Not a claim of permanent cold-start immunity.
 
 ## Human access
 
-Exercise requires Viewer for `gcp-devops@comm-it.cloud`. Principal type **unconfirmed**. **Working assumption:** `group:gcp-devops@comm-it.cloud` → `roles/viewer` (group-first practice; not Commit-confirmed). See [ACCESS-MODEL.md](ACCESS-MODEL.md).
+Viewer for `gcp-devops@comm-it.cloud`. Principal type **unconfirmed**. **Working assumption:** `group:gcp-devops@comm-it.cloud` → `roles/viewer`. See [ACCESS-MODEL.md](ACCESS-MODEL.md). Login not claimed.
 
 ## Time spent
 
-**Final active minutes: outstanding** (`FINAL_CONFIRMED_ACTIVE_MINUTES` unset). Submission blocked on confirmed active-time reconciliation.
+**Final active minutes: outstanding.** Do not invent totals.
 
 ## With more time
 
-WIF plan workflow, HA SQL, secret rotation, VPC-SC, SLOs, narrower migrator privileges, measured min-instances trade-off for cold starts.
+WIF plan workflow, HA SQL, secret rotation, VPC-SC, SLOs, measured min-instances trade-off.

@@ -13,6 +13,8 @@ resource "google_cloud_run_v2_service" "api" {
 
   template {
     service_account = google_service_account.runtime.email
+    # Align with app: 2 concurrent requests × 2 dependency tasks = 4 executor workers.
+    max_instance_request_concurrency = 2
 
     scaling {
       min_instance_count = 0
