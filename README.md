@@ -9,7 +9,7 @@
 | Identity | Value |
 |----------|--------|
 | **Deployed application source** | `910c929fbb101a6bcb8d5b012b21a460cec75cbc` (`910c929`) |
-| **Repository HEAD** | See latest commit on `main` (docs/workflow cleanup may be newer than the deployed app SHA) |
+| **Repository HEAD** | Tip of `main` (docs/workflow cleanup, then CI pin fix if present; intentionally may be newer than the deployed app SHA) |
 | **Deployed image** | `europe-west1-docker.pkg.dev/meridian-poc-ss-260913/meridian-app/api@sha256:43c6dc4bd70fe3f25f3b29459e11333a0376f6498f78b40d0efcc73a36e5c678` |
 
 Application and Terraform source trees under that deployed SHA remain the live workload. Later documentation-only commits intentionally do **not** trigger a redeploy.

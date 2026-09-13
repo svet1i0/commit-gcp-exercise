@@ -27,6 +27,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
       - name: Unit tests
         run: python -m unittest discover -s tests -v
 
@@ -38,7 +41,7 @@ jobs:
 
       - name: Setup Terraform
         # hashicorp/setup-terraform v3.1.2
-        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced210762dc
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
         with:
           terraform_version: "1.16.2"
           terraform_wrapper: false
@@ -70,7 +73,7 @@ jobs:
 
       - name: Build image (no push)
         # docker/build-push-action v6.10.0
-        uses: docker/build-push-action@67a2d409c0a410c53e51b800e17e73ae2cb8eb71
+        uses: docker/build-push-action@48aba3b46d1b1fec4febb7c5d0c644b249a11355
         with:
           context: app
           push: false
