@@ -1,0 +1,2 @@
+# Migration dependencies (Cloud Run Job)
+pg8000==1.31.5

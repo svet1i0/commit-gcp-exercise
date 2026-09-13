@@ -1,0 +1,17 @@
+# terraform.tfvars.example — copy to terraform.tfvars (gitignored) for non-secret settings only.
+# NEVER put db_password or third_party_api_token in tfvars.
+# Supply secrets via TF_VAR_db_password / TF_VAR_third_party_api_token (ephemeral) at apply time.
+
+project_id = "meridian-poc-ss-260913"
+region     = "europe-west1"
+
+enable_workloads = false
+enable_wif       = false
+
+# After image push:
+# enable_workloads = true
+# container_image  = "europe-west1-docker.pkg.dev/meridian-poc-ss-260913/meridian-app/api@sha256:..."
+# commit_sha       = "abcdef1..."
+
+# Reviewer (grant gate only):
+# reviewer_member = "user:gcp-devops@comm-it.cloud"

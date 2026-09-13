@@ -1,0 +1,9 @@
+# After first local apply, migrate state:
+#   terraform init -migrate-state
+#
+# backend "gcs" {
+#   bucket = "meridian-poc-ss-260913-tfstate"
+#   prefix = "bootstrap"
+# }
+#
+# Uncomment after the bucket exists. Do not commit credentials.

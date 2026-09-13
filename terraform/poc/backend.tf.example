@@ -1,0 +1,10 @@
+# After bootstrap bucket exists:
+#
+# terraform {
+#   backend "gcs" {
+#     bucket = "meridian-poc-ss-260913-tfstate"
+#     prefix = "poc"
+#   }
+# }
+#
+# No credentials in this file. Auth via ADC / WIF.

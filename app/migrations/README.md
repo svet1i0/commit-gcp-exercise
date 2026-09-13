@@ -1,0 +1,1 @@
+-- 001_init.sql already creates schema_migrations; migrate.py ensures it exists first.

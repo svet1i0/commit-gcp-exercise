@@ -1,0 +1,55 @@
+# Terraform
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+!*.tfvars.example
+backend.hcl
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Secrets / credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+*service-account*.json
+*credentials*.json
+application_default_credentials.json
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+.gcloud/
+gcloud/
+
+# Python / local tooling
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+coverage/
+dist/
+build/
+node_modules/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
