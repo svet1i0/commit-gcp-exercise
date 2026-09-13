@@ -13,5 +13,17 @@ enable_wif       = false
 # container_image  = "europe-west1-docker.pkg.dev/meridian-poc-ss-260913/meridian-app/api@sha256:..."
 # commit_sha       = "abcdef1..."
 
-# Reviewer (grant gate only):
+# Reviewer (grant gate). Documented working assumption: group principal (type unconfirmed).
+# reviewer_member = "group:gcp-devops@comm-it.cloud"
+# If Commit directs a Google user instead, switch input only:
 # reviewer_member = "user:gcp-devops@comm-it.cloud"
+
+# Optional additional human bindings (examples only — empty in POC apply):
+# human_access_bindings = {
+#   viewers = {
+#     role = "roles/viewer"
+#     members = [
+#       "group:gcp-viewers@example.com"
+#     ]
+#   }
+# }

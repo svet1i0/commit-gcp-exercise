@@ -57,6 +57,25 @@ POC proves the **target** GCP pattern Meridian would evaluate; source AWS remain
 Stage A: APIs, network, SQL, secrets, IAM, Artifact Registry (`enable_workloads=false`).  
 Stage B: push image by digest, set `enable_workloads=true`.
 
-## Reviewer
+## Reviewer (POC)
 
-Documented `gcp-devops@comm-it.cloud` → `roles/viewer` via `reviewer_member` (not granted until explicit gate).
+Mandatory: `gcp-devops@comm-it.cloud` → project `roles/viewer`. Source does **not** specify principal type (user vs group).
+
+**Working assumption (not customer-confirmed):** `group:gcp-devops@comm-it.cloud` via `reviewer_member` → additive `google_project_iam_member.human_access`. Reason: functional team address + group-first access practice. Successful IAM apply does **not** prove group membership or reviewer login.
+
+This project does **not** create or administer the Google Group. Switching to `user:` would be an input-only change if Commit directs.
+
+See [ACCESS-MODEL.md](ACCESS-MODEL.md).
+
+## Group-first human access model (D-023)
+
+**Decision:**
+
+- POC reviewer grant uses documented `group:` working assumption for the exercise email.
+- Production access is **group-first** (Level 2); identity membership managed outside project IAM.
+- **Workforce Identity Federation** is the preferred larger-scale evolution for external enterprise identities (Level 3) — **NOT IMPLEMENTED**.
+- Workload Identity Federation (GitHub → SA) remains separate from human federation — **NOT IMPLEMENTED**.
+
+**Rationale:** scalable onboarding/offboarding; stable IAM policies; auditability; separation of identity lifecycle from cloud resource deployment; least privilege; multi-company support.
+
+**Alternatives rejected:** individual IAM grants for every employee/vendor; broad organization-level roles; creating Google accounts manually for every external user; conflating human Workforce federation with workload WIF; inventing confirmation of principal type.

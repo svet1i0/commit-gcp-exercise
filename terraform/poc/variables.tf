@@ -104,6 +104,60 @@ variable "github_owner_id" {
 
 variable "reviewer_member" {
   type        = string
-  description = "IAM member for Viewer (e.g. user:gcp-devops@comm-it.cloud). Empty skips binding."
+  description = <<-EOT
+    Exercise reviewer IAM member for project roles/viewer (grant gate).
+    Empty skips the exercise-reviewer binding.
+    Working assumption for this POC: group:gcp-devops@comm-it.cloud
+    (principal type not confirmed by Commit; group-first practice).
+    Switch to user:gcp-devops@comm-it.cloud by changing only this input if directed.
+  EOT
   default     = ""
+
+  validation {
+    condition     = var.reviewer_member == "" || can(regex("^(user|group):.+@.+$", var.reviewer_member))
+    error_message = "reviewer_member must be empty or an IAM member string starting with user: or group: and containing an email."
+  }
+}
+
+variable "human_access_bindings" {
+  description = <<-EOT
+    Additional human-access IAM grants (map of named bindings).
+
+    Prefer group principals for scalable production access.
+    Direct user grants should be limited to explicit exceptions such as this
+    time-limited exercise.
+
+    Examples (documentation / example tfvars only — do not invent live groups):
+      user:alice@example.com
+      group:gcp-viewers@example.com
+
+    Roles/owner and roles/editor are rejected here to keep least privilege.
+    Future Workforce Identity Federation principal/principalSet IDs are a
+    documented extension (NOT IMPLEMENTED); do not invent unverified syntax.
+  EOT
+
+  type = map(object({
+    role    = string
+    members = set(string)
+  }))
+
+  default = {}
+
+  validation {
+    condition = alltrue([
+      for binding in values(var.human_access_bindings) :
+      !contains(["roles/owner", "roles/editor"], binding.role)
+    ])
+    error_message = "human_access_bindings must not use roles/owner or roles/editor; choose least-privilege roles."
+  }
+
+  validation {
+    condition = alltrue(flatten([
+      for binding in values(var.human_access_bindings) : [
+        for member in binding.members :
+        can(regex("^(user|group):.+@.+$", member))
+      ]
+    ]))
+    error_message = "Each human_access_bindings member must start with user: or group: and include an email address."
+  }
 }

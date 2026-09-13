@@ -2,27 +2,51 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
 import socket
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Callable
+from typing import Any, Callable
 from urllib.parse import urlparse
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("meridian")
 
 CANDIDATE = "Svetoslav Silkov"
-DB_TIMEOUT_SEC = float(os.environ.get("HEALTH_DB_TIMEOUT_SEC", "5"))
-SECRET_TIMEOUT_SEC = float(os.environ.get("HEALTH_SECRET_TIMEOUT_SEC", "5"))
-# Explicit Secret Manager versions for request-time reads (not Cloud Run env injection).
+# Overall DB health budget (secondary cold-start tolerance). Connector/driver
+# timeouts are set to the same budget so timed-out workers do not hang forever.
+DB_TIMEOUT_SEC = float(os.environ.get("HEALTH_DB_TIMEOUT_SEC", "15"))
+SECRET_TIMEOUT_SEC = float(os.environ.get("HEALTH_SECRET_TIMEOUT_SEC", "15"))
 SECRET_VERSION = "1"
+
+_connector_lock = threading.Lock()
+_connector: Any | None = None
+_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="health")
+_executor_closed = False
 
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def _log_health(event: str, *, stage: str, elapsed_ms: float, outcome: str, **extra: Any) -> None:
+    """Structured privacy-safe diagnostics (never log secrets/payloads/messages)."""
+    payload = {
+        "event": event,
+        "stage": stage,
+        "elapsed_ms": int(elapsed_ms),
+        "timeout_sec": extra.pop("timeout_sec", None),
+        "exception_class": extra.pop("exception_class", None),
+        "outcome": outcome,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}
+    payload.update(extra)
+    log.info("health_diag %s", json.dumps(payload, separators=(",", ":")))
 
 
 def _secret_resource(project: str, secret_id: str) -> str:
@@ -40,62 +64,185 @@ def _access_secret(project: str, secret_id: str) -> bytes:
     return resp.payload.data
 
 
+def _get_connector() -> Any:
+    """Process-scoped Cloud SQL Connector (lazy refresh for Cloud Run)."""
+    global _connector
+    with _connector_lock:
+        if _connector is None:
+            from google.cloud.sql.connector import Connector  # type: ignore
+
+            timeout = max(1, int(DB_TIMEOUT_SEC))
+            _connector = Connector(refresh_strategy="lazy", timeout=timeout)
+            _log_health(
+                "connector",
+                stage="connector_initialization",
+                elapsed_ms=0,
+                outcome="ok",
+                timeout_sec=timeout,
+            )
+        return _connector
+
+
+def _close_connector() -> None:
+    global _connector, _executor_closed
+    with _connector_lock:
+        if _connector is not None:
+            try:
+                _connector.close()
+            except Exception as exc:  # noqa: BLE001
+                _log_health(
+                    "connector",
+                    stage="connector_close",
+                    elapsed_ms=0,
+                    outcome="error",
+                    exception_class=type(exc).__name__,
+                )
+            _connector = None
+    if not _executor_closed:
+        _executor_closed = True
+        _executor.shutdown(wait=False, cancel_futures=False)
+
+
+atexit.register(_close_connector)
+
+
 def _connect_postgres(*, user: str, password: str | None, database: str, enable_iam_auth: bool):
-    """Cloud SQL Python Connector over PRIVATE IP (TLS + authenticated path)."""
-    from google.cloud.sql.connector import Connector, IPTypes  # type: ignore
+    """Open a short-lived DB connection via the process-scoped Connector (PRIVATE IP)."""
+    from google.cloud.sql.connector import IPTypes  # type: ignore
 
     instance = _env("INSTANCE_CONNECTION_NAME")
     if not instance:
         raise RuntimeError("INSTANCE_CONNECTION_NAME required")
 
-    connector = Connector(refresh_strategy="LAZY")
+    t0 = time.perf_counter()
+    connector = _get_connector()
+    _log_health(
+        "db_check",
+        stage="connector_acquisition",
+        elapsed_ms=(time.perf_counter() - t0) * 1000,
+        outcome="ok",
+    )
+
     kwargs: dict = {
         "user": user,
         "db": database,
         "ip_type": IPTypes.PRIVATE,
         "enable_iam_auth": enable_iam_auth,
+        "timeout": max(1, int(DB_TIMEOUT_SEC)),
     }
     if not enable_iam_auth:
         if password is None:
             raise RuntimeError("password required for built-in DB user")
         kwargs["password"] = password
-    # Returns a pg8000 DB-API connection
-    return connector, connector.connect(instance, "pg8000", **kwargs)
+
+    t1 = time.perf_counter()
+    conn = connector.connect(instance, "pg8000", **kwargs)
+    _log_health(
+        "db_check",
+        stage="database_connect",
+        elapsed_ms=(time.perf_counter() - t1) * 1000,
+        outcome="ok",
+        timeout_sec=kwargs["timeout"],
+    )
+    return conn
 
 
 def check_database() -> str:
-    """Real SQL via Connector; password from Secret Manager (request-time), not env injection."""
+    """Real SQL via process-scoped Connector; password from Secret Manager (request-time)."""
+    overall_t0 = time.perf_counter()
     project = _env("GCP_PROJECT") or _env("GOOGLE_CLOUD_PROJECT")
     database = _env("DB_NAME", "meridian")
     user = _env("DB_USER", "app_user")
     db_secret = _env("DB_PASSWORD_SECRET")
     if not project or not db_secret or not _env("INSTANCE_CONNECTION_NAME"):
+        _log_health(
+            "db_check",
+            stage="overall_db_check",
+            elapsed_ms=(time.perf_counter() - overall_t0) * 1000,
+            outcome="error",
+            exception_class="MissingConfig",
+        )
         return "error"
-    connector = None
+
+    conn = None
+    stage = "overall_db_check"
     try:
+        stage = "db_password_read"
+        t0 = time.perf_counter()
         password = _access_secret(project, db_secret).decode("utf-8")
-        connector, conn = _connect_postgres(
+        _log_health(
+            "db_check",
+            stage=stage,
+            elapsed_ms=(time.perf_counter() - t0) * 1000,
+            outcome="ok",
+        )
+
+        stage = "database_connect"
+        conn = _connect_postgres(
             user=user, password=password, database=database, enable_iam_auth=False
         )
+
+        stage = "select_1"
+        t1 = time.perf_counter()
+        cur = conn.cursor()
         try:
-            cur = conn.cursor()
             cur.execute("SELECT 1")
             row = cur.fetchone()
-            cur.close()
-            if not row or row[0] != 1:
-                return "error"
-            return "ok"
         finally:
-            conn.close()
-    except Exception:
-        log.warning("database health check failed")
+            cur.close()
+        _log_health(
+            "db_check",
+            stage=stage,
+            elapsed_ms=(time.perf_counter() - t1) * 1000,
+            outcome="ok",
+        )
+        if not row or row[0] != 1:
+            _log_health(
+                "db_check",
+                stage="overall_db_check",
+                elapsed_ms=(time.perf_counter() - overall_t0) * 1000,
+                outcome="error",
+                exception_class="UnexpectedQueryResult",
+            )
+            return "error"
+
+        _log_health(
+            "db_check",
+            stage="overall_db_check",
+            elapsed_ms=(time.perf_counter() - overall_t0) * 1000,
+            outcome="ok",
+            timeout_sec=DB_TIMEOUT_SEC,
+        )
+        return "ok"
+    except Exception as exc:  # noqa: BLE001
+        _log_health(
+            "db_check",
+            stage=stage,
+            elapsed_ms=(time.perf_counter() - overall_t0) * 1000,
+            outcome="error",
+            exception_class=type(exc).__name__,
+            timeout_sec=DB_TIMEOUT_SEC,
+        )
         return "error"
     finally:
-        if connector is not None:
+        if conn is not None:
             try:
-                connector.close()
-            except Exception:
-                pass
+                t2 = time.perf_counter()
+                conn.close()
+                _log_health(
+                    "db_check",
+                    stage="connection_close",
+                    elapsed_ms=(time.perf_counter() - t2) * 1000,
+                    outcome="ok",
+                )
+            except Exception as exc:  # noqa: BLE001
+                _log_health(
+                    "db_check",
+                    stage="connection_close",
+                    elapsed_ms=0,
+                    outcome="error",
+                    exception_class=type(exc).__name__,
+                )
 
 
 def check_secrets() -> str:
@@ -110,23 +257,43 @@ def check_secrets() -> str:
         data2 = _access_secret(project, token_secret)
         if not data1 or not data2:
             return "error"
-        # Never return or log payloads
         return "ok"
-    except Exception:
-        log.warning("secret health check failed")
+    except Exception as exc:  # noqa: BLE001
+        _log_health(
+            "secret_check",
+            stage="secret_read",
+            elapsed_ms=0,
+            outcome="error",
+            exception_class=type(exc).__name__,
+        )
         return "error"
 
 
-def _run_with_timeout(fn: Callable[[], str], timeout: float) -> str:
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        fut = pool.submit(fn)
-        try:
-            return fut.result(timeout=timeout)
-        except FuturesTimeout:
-            log.warning("health check timed out")
-            return "error"
-        except Exception:
-            return "error"
+def _run_with_timeout(fn: Callable[[], str], timeout: float, *, label: str) -> str:
+    """Run fn on the process-scoped executor; return error on timeout without blocking exit."""
+    fut = _executor.submit(fn)
+    try:
+        return fut.result(timeout=timeout)
+    except FuturesTimeout:
+        _log_health(
+            "health_timeout",
+            stage=label,
+            elapsed_ms=timeout * 1000,
+            outcome="error",
+            exception_class="TimeoutError",
+            timeout_sec=timeout,
+        )
+        return "error"
+    except Exception as exc:  # noqa: BLE001
+        _log_health(
+            "health_timeout",
+            stage=label,
+            elapsed_ms=0,
+            outcome="error",
+            exception_class=type(exc).__name__,
+            timeout_sec=timeout,
+        )
+        return "error"
 
 
 def build_health() -> tuple[int, dict[str, str]]:
@@ -134,8 +301,8 @@ def build_health() -> tuple[int, dict[str, str]]:
     commit = _env("COMMIT_SHA", "unknown")[:7]
     region = _env("GCP_REGION", "europe-west1")
 
-    db_status = _run_with_timeout(check_database, DB_TIMEOUT_SEC + 0.5)
-    secret_status = _run_with_timeout(check_secrets, SECRET_TIMEOUT_SEC + 0.5)
+    db_status = _run_with_timeout(check_database, DB_TIMEOUT_SEC, label="overall_db_check")
+    secret_status = _run_with_timeout(check_secrets, SECRET_TIMEOUT_SEC, label="secret_check")
 
     body = {
         "candidate": CANDIDATE,
@@ -176,6 +343,7 @@ def main() -> None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.close()
+    # Warm the process-scoped connector reference lazily on first DB check.
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     log.info("listening on :%s", port)
     server.serve_forever()

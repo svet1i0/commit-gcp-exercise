@@ -75,11 +75,4 @@ resource "google_storage_bucket_iam_member" "tf_plan_state_reader" {
   member = "serviceAccount:${google_service_account.tf_plan[0].email}"
 }
 
-# Reviewer Viewer — only when reviewer_member is set (grant gate)
-resource "google_project_iam_member" "reviewer_viewer" {
-  count = var.reviewer_member == "" ? 0 : 1
-
-  project = var.project_id
-  role    = "roles/viewer"
-  member  = var.reviewer_member
-}
+# Human / reviewer project IAM: see human_access.tf (reviewer_member + human_access_bindings).
