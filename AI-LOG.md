@@ -1041,7 +1041,7 @@ Proceed now through the remaining Prompt 3 phases and STOP only on a still-appli
 - Migration execution succeeded with `001_init.sql` skipped.
 - Live health: sequential 12/12 and concurrent 8/8 HTTP 200 with the five-field contract.
 - Publication-safety CI guard added; personal Gmail-style addresses removed from published reachable history.
-- Active minutes remain outstanding; email not sent; WIF not implemented.
+- Final recorded active time for submission: **3 hours 32 minutes (212 minutes total)**, confirmed as `FINAL_ACTIVE_MINUTES=212`. Clarification email already sent earlier; not resent. Bonus WIF is disabled, not deployed, not tested, and not implemented.
 
 ## Estimate of AI-generated code
 

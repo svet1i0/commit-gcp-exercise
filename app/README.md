@@ -29,8 +29,18 @@ There is **no** `DB_HOST` / raw `DB_PASSWORD` environment injection for the live
 
 ## Migrations
 
+Developer initiation is from the laptop; execution is remote inside GCP (private path):
+
+```bash
+gcloud run jobs execute meridian-migrate --region=europe-west1 --project=meridian-poc-ss-260913 --wait
+gcloud run jobs executions describe EXECUTION_NAME --region=europe-west1 --project=meridian-poc-ss-260913
+gcloud logging read 'resource.type="cloud_run_job" AND resource.labels.job_name="meridian-migrate"' --project=meridian-poc-ss-260913 --limit=20
+```
+
+Job image entrypoint:
+
 ```bash
 python3 migrations/migrate.py
 ```
 
-Run via Cloud Run Job `meridian-migrate` as GCP SA `meridian-migrator`, authenticating to PostgreSQL as IAM DB user `meridian-migrator@meridian-poc-ss-260913.iam` (Cloud SQL IAM DB authentication + Connector / `PRIVATE`).
+Runs as GCP SA `meridian-migrator`, authenticating to PostgreSQL as IAM DB user `meridian-migrator@meridian-poc-ss-260913.iam` (Cloud SQL IAM DB authentication + Connector / `PRIVATE`). Versioned SQL files live beside the migrator (e.g. `migrations/001_init.sql`).
