@@ -1,3 +1,4 @@
 # Meridian POC API — pin for reproducible builds
 pg8000==1.31.5
+cloud-sql-python-connector[pg8000]==1.18.3
 google-cloud-secret-manager==2.25.0

@@ -15,39 +15,74 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 log = logging.getLogger("meridian")
 
 CANDIDATE = "Svetoslav Silkov"
-DB_TIMEOUT_SEC = float(os.environ.get("HEALTH_DB_TIMEOUT_SEC", "3"))
-SECRET_TIMEOUT_SEC = float(os.environ.get("HEALTH_SECRET_TIMEOUT_SEC", "3"))
+DB_TIMEOUT_SEC = float(os.environ.get("HEALTH_DB_TIMEOUT_SEC", "5"))
+SECRET_TIMEOUT_SEC = float(os.environ.get("HEALTH_SECRET_TIMEOUT_SEC", "5"))
+# Explicit Secret Manager versions for request-time reads (not Cloud Run env injection).
+SECRET_VERSION = "1"
 
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def _secret_resource(project: str, secret_id: str) -> str:
+    if secret_id.startswith("projects/"):
+        return secret_id
+    return f"projects/{project}/secrets/{secret_id}/versions/{SECRET_VERSION}"
+
+
+def _access_secret(project: str, secret_id: str) -> bytes:
+    from google.cloud import secretmanager  # type: ignore
+
+    client = secretmanager.SecretManagerServiceClient()
+    name = _secret_resource(project, secret_id)
+    resp = client.access_secret_version(request={"name": name})
+    return resp.payload.data
+
+
+def _connect_postgres(*, user: str, password: str | None, database: str, enable_iam_auth: bool):
+    """Cloud SQL Python Connector over PRIVATE IP (TLS + authenticated path)."""
+    from google.cloud.sql.connector import Connector, IPTypes  # type: ignore
+
+    instance = _env("INSTANCE_CONNECTION_NAME")
+    if not instance:
+        raise RuntimeError("INSTANCE_CONNECTION_NAME required")
+
+    connector = Connector(refresh_strategy="LAZY")
+    kwargs: dict = {
+        "user": user,
+        "db": database,
+        "ip_type": IPTypes.PRIVATE,
+        "enable_iam_auth": enable_iam_auth,
+    }
+    if not enable_iam_auth:
+        if password is None:
+            raise RuntimeError("password required for built-in DB user")
+        kwargs["password"] = password
+    # Returns a pg8000 DB-API connection
+    return connector, connector.connect(instance, "pg8000", **kwargs)
+
+
 def check_database() -> str:
-    """Run a real SQL query; return 'ok' or 'error'. Never raise secret details."""
-    host = _env("DB_HOST")
-    port = int(_env("DB_PORT", "5432") or "5432")
+    """Real SQL via Connector; password from Secret Manager (request-time), not env injection."""
+    project = _env("GCP_PROJECT") or _env("GOOGLE_CLOUD_PROJECT")
     database = _env("DB_NAME", "meridian")
     user = _env("DB_USER", "app_user")
-    password = _env("DB_PASSWORD")
-    # Optional: password from Secret Manager resource name handled in check_secrets;
-    # runtime may inject DB_PASSWORD from Cloud Run secret env or fetch in-process.
-    if not host or not password:
+    db_secret = _env("DB_PASSWORD_SECRET")
+    if not project or not db_secret or not _env("INSTANCE_CONNECTION_NAME"):
         return "error"
+    connector = None
     try:
-        import pg8000.native  # type: ignore
-
-        conn = pg8000.native.Connection(
-            user=user,
-            password=password,
-            host=host,
-            port=port,
-            database=database,
-            timeout=DB_TIMEOUT_SEC,
+        password = _access_secret(project, db_secret).decode("utf-8")
+        connector, conn = _connect_postgres(
+            user=user, password=password, database=database, enable_iam_auth=False
         )
         try:
-            row = conn.run("SELECT 1")
-            if not row or row[0][0] != 1:
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            row = cur.fetchone()
+            cur.close()
+            if not row or row[0] != 1:
                 return "error"
             return "ok"
         finally:
@@ -55,32 +90,27 @@ def check_database() -> str:
     except Exception:
         log.warning("database health check failed")
         return "error"
+    finally:
+        if connector is not None:
+            try:
+                connector.close()
+            except Exception:
+                pass
 
 
 def check_secrets() -> str:
-    """Read both required Secret Manager secret versions; return 'ok' or 'error'."""
+    """Request-time Secret Manager API reads for BOTH configured secrets (version 1)."""
     project = _env("GCP_PROJECT") or _env("GOOGLE_CLOUD_PROJECT")
-    db_secret = _env("DB_PASSWORD_SECRET")  # projects/.../secrets/.../versions/latest
+    db_secret = _env("DB_PASSWORD_SECRET")
     token_secret = _env("THIRD_PARTY_TOKEN_SECRET")
     if not project or not db_secret or not token_secret:
         return "error"
     try:
-        from google.cloud import secretmanager  # type: ignore
-
-        client = secretmanager.SecretManagerServiceClient()
-
-        def _read(name: str) -> bytes:
-            # Accept full resource name or secret id
-            resource = name
-            if not name.startswith("projects/"):
-                resource = f"projects/{project}/secrets/{name}/versions/latest"
-            resp = client.access_secret_version(request={"name": resource})
-            return resp.payload.data
-
-        data1 = _read(db_secret)
-        data2 = _read(token_secret)
+        data1 = _access_secret(project, db_secret)
+        data2 = _access_secret(project, token_secret)
         if not data1 or not data2:
             return "error"
+        # Never return or log payloads
         return "ok"
     except Exception:
         log.warning("secret health check failed")
@@ -104,7 +134,6 @@ def build_health() -> tuple[int, dict[str, str]]:
     commit = _env("COMMIT_SHA", "unknown")[:7]
     region = _env("GCP_REGION", "europe-west1")
 
-    # Independent attempts (separate timeouts)
     db_status = _run_with_timeout(check_database, DB_TIMEOUT_SEC + 0.5)
     secret_status = _run_with_timeout(check_secrets, SECRET_TIMEOUT_SEC + 0.5)
 
@@ -144,7 +173,6 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     port = int(_env("PORT", "8080") or "8080")
-    # Bind check
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.close()

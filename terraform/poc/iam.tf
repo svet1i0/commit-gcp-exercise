@@ -5,18 +5,36 @@ resource "google_service_account" "runtime" {
   display_name = "Meridian POC Cloud Run runtime"
 }
 
-# Migrator SA: used by Cloud Run Job (Stage B). Separate GCP identity from runtime;
-# shares the single POC DB user (Design B) — SQL-user separation is a prod improvement.
+# Migrator SA: Cloud Run Job identity AND distinct Cloud SQL IAM database user.
 resource "google_service_account" "migrator" {
   project      = var.project_id
   account_id   = "${var.name_prefix}-migrator"
   display_name = "Meridian POC migration job"
 }
 
-# No roles/cloudsql.client: app and migrator use pg8000 TCP to the private IP
-# with DB user/password (Direct VPC egress). They do not use Cloud SQL Connector.
+# Cloud SQL Python Connector requires cloudsql.client (metadata + dial).
+resource "google_project_iam_member" "runtime_cloudsql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.runtime.email}"
+}
+
+resource "google_project_iam_member" "migrator_cloudsql_client" {
+  project = var.project_id
+  role    = "roles/cloudsql.client"
+  member  = "serviceAccount:${google_service_account.migrator.email}"
+}
+
+# IAM database authentication login permission.
+resource "google_project_iam_member" "migrator_cloudsql_instance_user" {
+  project = var.project_id
+  role    = "roles/cloudsql.instanceUser"
+  member  = "serviceAccount:${google_service_account.migrator.email}"
+}
 
 # Secret access is secret-scoped, not project-wide.
+# Runtime reads BOTH secrets at /health request time via Secret Manager API.
+# Migrator uses IAM DB auth — no password secret (no third secret; no migrator secret IAM).
 
 resource "google_secret_manager_secret_iam_member" "runtime_db_secret" {
   project   = var.project_id
@@ -30,13 +48,6 @@ resource "google_secret_manager_secret_iam_member" "runtime_token_secret" {
   secret_id = google_secret_manager_secret.third_party_token.secret_id
   role      = "roles/secretmanager.secretAccessor"
   member    = "serviceAccount:${google_service_account.runtime.email}"
-}
-
-resource "google_secret_manager_secret_iam_member" "migrator_db_secret" {
-  project   = var.project_id
-  secret_id = google_secret_manager_secret.db_password.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.migrator.email}"
 }
 
 # WIF plan SA — only when enable_wif=true (not Stage A)

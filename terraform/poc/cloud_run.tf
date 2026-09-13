@@ -43,12 +43,8 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.project_id
       }
       env {
-        name  = "DB_HOST"
-        value = google_sql_database_instance.poc.private_ip_address
-      }
-      env {
-        name  = "DB_PORT"
-        value = "5432"
+        name  = "INSTANCE_CONNECTION_NAME"
+        value = google_sql_database_instance.poc.connection_name
       }
       env {
         name  = "DB_NAME"
@@ -58,6 +54,8 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "DB_USER"
         value = google_sql_user.app.name
       }
+      # Secret *identifiers* only — app performs request-time Secret Manager API reads.
+      # Do NOT inject DB password via secret_key_ref (that is not a /health SM read).
       env {
         name  = "DB_PASSWORD_SECRET"
         value = google_secret_manager_secret.db_password.secret_id
@@ -65,16 +63,6 @@ resource "google_cloud_run_v2_service" "api" {
       env {
         name  = "THIRD_PARTY_TOKEN_SECRET"
         value = google_secret_manager_secret.third_party_token.secret_id
-      }
-
-      env {
-        name = "DB_PASSWORD"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.db_password.secret_id
-            version = "1"
-          }
-        }
       }
 
       resources {
@@ -90,6 +78,7 @@ resource "google_cloud_run_v2_service" "api" {
     google_project_service.required,
     google_secret_manager_secret_version.db_password,
     google_secret_manager_secret_version.third_party_token,
+    google_project_iam_member.runtime_cloudsql_client,
   ]
 }
 
@@ -129,29 +118,21 @@ resource "google_cloud_run_v2_job" "migrate" {
         command = ["python", "-u", "migrations/migrate.py"]
 
         env {
-          name  = "DB_HOST"
-          value = google_sql_database_instance.poc.private_ip_address
-        }
-        env {
-          name  = "DB_PORT"
-          value = "5432"
+          name  = "INSTANCE_CONNECTION_NAME"
+          value = google_sql_database_instance.poc.connection_name
         }
         env {
           name  = "DB_NAME"
           value = google_sql_database.app.name
         }
+        # Distinct IAM DB identity (not app_user). No password / no secret_key_ref.
         env {
           name  = "DB_USER"
-          value = google_sql_user.app.name
+          value = google_sql_user.migrator_iam.name
         }
         env {
-          name = "DB_PASSWORD"
-          value_source {
-            secret_key_ref {
-              secret  = google_secret_manager_secret.db_password.secret_id
-              version = "1"
-            }
-          }
+          name  = "APP_DB_USER"
+          value = google_sql_user.app.name
         }
       }
     }
@@ -159,6 +140,8 @@ resource "google_cloud_run_v2_job" "migrate" {
 
   depends_on = [
     google_project_service.required,
-    google_secret_manager_secret_version.db_password,
+    google_sql_user.migrator_iam,
+    google_project_iam_member.migrator_cloudsql_client,
+    google_project_iam_member.migrator_cloudsql_instance_user,
   ]
 }
