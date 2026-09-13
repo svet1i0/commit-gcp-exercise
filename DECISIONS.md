@@ -6,23 +6,29 @@ GKE adds cluster ops cost and time. Cloud Run fits a single stateless HTTP API w
 
 ## Network: custom VPC (not default)
 
-Customer brief suggested default VPC. Incorrect simplification for PSA/private SQL. Dedicated custom-mode VPC with explicit subnet and firewall.
+Customer brief suggested default VPC. Incorrect simplification for PSA/private SQL. Dedicated custom-mode VPC with an explicit subnet and Private Services Access.
+
+**Firewall:** no custom VPC firewall rule was required for this POC path (Cloud Run Direct VPC egress + private Cloud SQL / PSA). Production hardening may still add explicit deny/allow rules.
 
 ## Database: Cloud SQL PostgreSQL, private only
 
-Exercise requires Cloud SQL. Meridian: not internet-reachable. Implementation: private IP, `ipv4_enabled=false`, no `authorized_networks`, PSA peering.
+Exercise requires Cloud SQL. Meridian: not internet-reachable. Implementation: PostgreSQL 15, private IP, `ipv4_enabled=false`, no `authorized_networks`, PSA peering.
 
-## Connectivity: Direct VPC egress
+## Connectivity: Direct VPC egress + Cloud SQL Connector
 
 No Serverless VPC Access connector. Confirmed for service and job in provider google 8.2.0.
 
+Application and migration code use the **Cloud SQL Python Connector** with **`IPTypes.PRIVATE`** (not raw host/password TCP to a private IP env var).
+
 ## Secrets: Secret Manager + write-only Terraform
 
-Two secrets. Ephemeral sensitive variables feed `password_wo` and `secret_data_wo` so payloads are not stored in plan/state. Org policy also forbids SA JSON keys.
+Two secrets. Ephemeral sensitive variables feed `password_wo` and `secret_data_wo` so payloads are not stored in plan/state. Org policy also forbids SA JSON keys. Runtime reads both secrets at request time (version 1).
 
-## Auth to GCP from GitHub: WIF/OIDC
+## Auth to GCP from GitHub: WIF/OIDC (design) — NOT IMPLEMENTED
 
-Rejected long-lived JSON keys (exercise + `disableServiceAccountKeyCreation`). Plan-only SA; local ADC for apply.
+Rejected long-lived JSON keys (exercise + `disableServiceAccountKeyCreation`). Intended pattern: plan-only SA via GitHub OIDC/WIF; local ADC for apply.
+
+**Status:** authenticated Terraform PR plan / WIF is **NOT IMPLEMENTED** (bonus deferred due to time priority). Static local CI (`ci.yml`) is the delivered automation.
 
 ## Migrations: Cloud Run Job + separate IAM database identity
 
@@ -34,13 +40,13 @@ Developers trigger from laptop via `gcloud run jobs execute`. The job runs as GC
 
 Runtime uses built-in `app_user` with the existing DB-password secret. No third Secret Manager secret.
 
-**POC privilege note:** `cloudsqlsuperuser` is granted **only** to the migration IAM DB identity so schema migrations are deterministic within the time budget. The runtime `app_user` must **not** receive `cloudsqlsuperuser` or schema-owner privileges (DML grants only after migrate). Production should replace `cloudsqlsuperuser` with a narrower custom migration role limited to required database/schema privileges.
+**POC privilege note:** `cloudsqlsuperuser` is granted **only** to the migration IAM DB identity so schema migrations are deterministic within the time budget. The runtime `app_user` must **not** receive `cloudsqlsuperuser` or schema-owner privileges (DML grants only after migrate). **Production would narrow migration DB privileges** (replace `cloudsqlsuperuser` with a custom role limited to required schema operations).
 
-Connectivity: Cloud SQL Python Connector with `PRIVATE` IP (Direct VPC egress), not raw unauthenticated TCP.
+Live result: first job run applied `001_init.sql`; second run safely skipped it.
 
 ## POC vs production
 
-Single-zone, no HA/DR demo, no multi-region, no AWS CDC. Production would add HA, rotation, VPC-SC, private health diagnostics, stronger CI/CD.
+Single-zone, no HA/DR demo, no multi-region, no AWS CDC. Production would add HA, rotation, VPC-SC, private health diagnostics, stronger CI/CD, and narrower migrator privileges.
 
 ## AWS → GCP framing
 

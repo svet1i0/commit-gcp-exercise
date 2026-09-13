@@ -63,7 +63,7 @@
 |-------|--------|
 | **Proposal** | Store SA JSON key in GitHub Secrets for Terraform |
 | **Why wrong** | Exercise forbids long-lived credentials; org policy `disableServiceAccountKeyCreation` / upload |
-| **Instead** | Local ADC for apply; GitHub OIDC/WIF for plan-only |
+| **Instead** | Local ADC for apply; design for GitHub OIDC/WIF plan-only (**WIF not implemented** in this submission — time priority) |
 | **Evidence** | Exercise PDF; org policy |
 
 ### 7. Default VPC
@@ -74,6 +74,15 @@
 | **Why wrong** | Misleading for private SQL; poor isolation |
 | **Instead** | Custom-mode VPC + PSA |
 | **Evidence** | Meridian authorized proper design; Cloud SQL private IP docs |
+
+### 8. Privacy-safe Git history before publish
+
+| Field | Detail |
+|-------|--------|
+| **Issue** | Early local commits used a personal author/committer email unsuitable for a public repository |
+| **Correction** | Rewrote author/committer metadata to the verified GitHub noreply address `75417040+svet1i0@users.noreply.github.com` (tree preserved), then redacted remaining personal-email text in `AI-LOG.md` to `[redacted-personal-gmail]` |
+| **Deploy impact** | Application/Terraform trees stayed byte-identical; Cloud Run was reconciled to public SHA `910c929` / image digest `sha256:43c6dc4b…` without schema/migration changes |
+| **Evidence** | Private working traceability; live `/health` `commit=910c929` |
 
 ## Something AI caught that I might have missed
 
