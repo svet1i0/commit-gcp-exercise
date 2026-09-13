@@ -1033,6 +1033,16 @@ Report GitHub cache/unreachable-object limitations honestly. Do not claim deleti
 Proceed now through the remaining Prompt 3 phases and STOP only on a still-applicable safety, validation, lease, CI, deployment, or drift failure.
 </pre>
 
+
+## Prompt 3 / 3A measured outcome
+
+- Expanded history rewrite sanitized reachable main history (first affected was the repository root).
+- Functional deploy SHA `b6a654e…`; image digest `sha256:9fcbf3d8…`; revision `meridian-api-00004-sgb`; concurrency 2.
+- Migration execution succeeded with `001_init.sql` skipped.
+- Live health: sequential 12/12 and concurrent 8/8 HTTP 200 with the five-field contract.
+- Publication-safety CI guard added; personal Gmail-style addresses removed from published reachable history.
+- Active minutes remain outstanding; email not sent; WIF not implemented.
+
 ## Estimate of AI-generated code
 
 Roughly **70–85%** of repository file text was AI-drafted in Cursor; all Terraform and health-contract behavior reviewed and adjusted by Svetoslav before apply/publish.
