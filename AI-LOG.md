@@ -1045,7 +1045,7 @@ Proceed now through the remaining Prompt 3 phases and STOP only on a still-appli
 
 ## Group-ready access and data-migration documentation (post-closeout documentation refinement)
 
-An earlier technical closeout baseline recorded **212 active minutes**. Before final delivery, an additional documentation refinement was completed. The documentation work is recorded as an **approved 20-minute estimate** because it was not directly measured, and the final reconciliation added **1 measured minute**, producing an intermediate published total of **233**. A further **2 user-reported** minutes cover subsequent review/diagnosis before the health-timeout remediation. The unapproved ~19-minute presentation estimate is **not** included. This remediation’s active work is recorded separately in the final total (`FINAL_ACTIVE_MINUTES=239`). The **final submission email had not been sent** at the time of this documentation update.
+An earlier technical closeout baseline recorded **212 active minutes**. Before final delivery, an additional documentation refinement was completed. The documentation work is recorded as an **approved 20-minute estimate** because it was not directly measured, and the final reconciliation added **1 measured minute**, producing an intermediate published total of **233**. A further **2 user-reported** minutes cover subsequent review/diagnosis before the health-timeout remediation. The unapproved ~19-minute presentation estimate is **not** included. This remediation’s active work is included in **`FINAL_ACTIVE_MINUTES=244` (04:04)**. The **final submission email had not been sent** at the time of this documentation update.
 
 | Item | Detail |
 |------|--------|
@@ -1064,7 +1064,8 @@ WIF remains bonus, disabled, not deployed, not tested, and not implemented.
 | **Evidence** | Local reproduction: equal 0.05–0.2s budgets, slow DB, immediate secret → HTTP 503 with `db=error` and incorrectly `secret=error`. |
 | **Correction** | Submit checks with a completion timestamp; accept an on-time stamped result when retrieved after the waiter’s remaining budget; reject results that actually completed after their deadline. `cancel()` only affects queued work — it does not terminate a running thread. |
 | **Tests** | Added equal-deadline regressions (both directions), both-timeout, late-stamped rejection, waiter-late acceptance, and exception independence. Full suite **31** tests. |
-| **Infrastructure** | Documentation + application timeout handling only until the bounded image redeploy of this remediation. |
+| **Deploy** | Functional source `690d81c…`; image `sha256:48a8d155…`; revision `meridian-api-00005-v7m` @ 100%. Previous revision `meridian-api-00004-sgb` / digest `sha256:9fcbf3d8…` retained for recovery. Migration Job image updated to the same digest; Job **not** executed. |
+| **Final time** | `FINAL_ACTIVE_MINUTES=244` (04:04). Starting total before resume **235**; remediation **+9** measured/ceiled. Presentation estimate excluded. |
 
 ## Estimate of AI-generated code
 

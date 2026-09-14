@@ -15,9 +15,9 @@ Public **Cloud Run** API → Direct VPC egress → private Cloud SQL PostgreSQL 
 | Public repo | https://github.com/svet1i0/commit-gcp-exercise |
 | Branch | `main` |
 | Health | https://meridian-api-rgi4x3jv2a-ew.a.run.app/health |
-| Deployed source SHA | `b6a654efffd3a4922596e3fec24f806b381fbcfd` (short `b6a654e` in `/health`) |
-| Image digest | `sha256:9fcbf3d808b78c4cd738acc02673cd0cfa5599ff2959ffffec0725f56d2e2908` |
-| Serving revision | `meridian-api-00004-sgb` (100% traffic; concurrency 2) |
+| Deployed source SHA | `690d81cc175ef52533319a966c0e03cf669aa9b3` (short `690d81c` in `/health`) |
+| Image digest | `sha256:48a8d15530e8be04ef9e11790e761bb1195d0802127ae2123920f0095bf70d98` |
+| Serving revision | `meridian-api-00005-v7m` (100% traffic; concurrency 2) |
 | Repository HEAD | tip of `main` (docs-only commits may follow the deployed functional SHA) |
 
 ```bash
@@ -38,7 +38,7 @@ gcloud run jobs execute meridian-migrate \
 
 CI is validation-only (tests, publication-safety, `terraform fmt`/`validate`, Docker build without push). Bonus WIF / authenticated PR `terraform plan` is disabled, not deployed, not tested, and not implemented (`wif.tf` is a design skeleton only).
 
-**Measured (2026-09-13):** sequential `/health` **12/12** HTTP 200 (`db=ok`, `secret=ok`, five fields) starting **15:44:38Z**. Concurrent burst **8/8** HTTP 200 (min 0.231s, median 2.319s, p95 4.387s, max 4.395s). Migration job `meridian-migrate-dwhvd` succeeded; `001_init.sql` skipped. New-revision evidence: `DEPLOYMENT_ROLLOUT` / `AUTOSCALING` startup logs — not claimed as a proven idle scale-from-zero cold start under all conditions.
+**Measured (2026-09-14):** after health-timeout remediation deploy, sequential `/health` **5/5** and concurrent **6/6** HTTP 200 (`db=ok`, `secret=ok`, five fields, commit `690d81c`) at **09:30:11Z**. Unknown route returns 404. Prior 2026-09-13 burst evidence remains historical.
 
 ## Human access and data migration
 
@@ -46,7 +46,7 @@ Viewer for `gcp-devops@comm-it.cloud`. Principal type **unconfirmed**. **Working
 
 ## Time spent
 
-**Time spent: 03:59 (239 minutes).** `FINAL_ACTIVE_MINUTES=239`. Remaining under the five-hour hard stop: **61 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
+**Time spent: 04:04 (244 minutes).** `FINAL_ACTIVE_MINUTES=244`. Remaining under the five-hour hard stop: **56 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
 
 ## With more time
 
