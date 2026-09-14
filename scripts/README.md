@@ -1,15 +1,13 @@
 # Scripts
 
-Reserved for repeatable **build**, **deployment**, **validation**, and **teardown** commands.
+Repeatable local validation helpers. Do not embed credentials, secret values, or customer correspondence.
 
-## Status
+## `check_publication_safety.py`
 
-**No scripts yet.**
+Scans the repository for accidental publication of credentials, private keys, Terraform state, and similar sensitive patterns. Used by local CI (`.github/workflows/ci.yml` job `publication-safety`).
 
-Scripts will be added after:
+```bash
+python3 scripts/check_publication_safety.py
+```
 
-1. Meridian response is mapped to scope.
-2. Implementation toolchain is selected (language, container build, Terraform workflows).
-3. Validation and teardown steps are defined in the delivery plan.
-
-Do not add scripts that embed credentials, secret values, or customer correspondence.
+Exit code 0 means the scan found no matching issues.

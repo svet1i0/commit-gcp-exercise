@@ -400,23 +400,45 @@ def check_secrets(deadline: float | None = None) -> str:
         return "error"
 
 
+def _submit_health_check(fn, deadline: float) -> Future:
+    """Submit a check; stamp completion time so late 'ok' cannot pass after deadline."""
+
+    def run() -> tuple[str, float]:
+        try:
+            status = fn(deadline)
+        except Exception:  # noqa: BLE001
+            status = "error"
+        return status, time.perf_counter()
+
+    return _executor.submit(run)
+
+
 def _await_future(fut: Future, deadline: float, *, label: str) -> str:
-    """Wait until absolute deadline; cancel queued work when possible."""
+    """Await a stamped check result.
+
+    An on-time completion remains valid when retrieved after the waiter’s remaining
+    budget (e.g. after awaiting the sibling check). A result that actually completed
+    after its deadline is never accepted as ok. cancel() only affects queued work —
+    it does not terminate an already-running worker thread.
+    """
     rem = _remaining(deadline)
-    if rem <= 0:
-        fut.cancel()
-        _log_health(
-            "health_timeout",
-            stage=label,
-            elapsed_ms=0,
-            outcome="error",
-            exception_class="TimeoutError",
-            timeout_sec=0,
-        )
-        return "error"
     t0 = time.perf_counter()
     try:
-        return fut.result(timeout=rem)
+        if fut.done():
+            status, completed_at = fut.result(timeout=0)
+        elif rem <= 0:
+            fut.cancel()
+            _log_health(
+                "health_timeout",
+                stage=label,
+                elapsed_ms=0,
+                outcome="error",
+                exception_class="TimeoutError",
+                timeout_sec=0,
+            )
+            return "error"
+        else:
+            status, completed_at = fut.result(timeout=rem)
     except FuturesTimeout:
         fut.cancel()
         _log_health(
@@ -438,6 +460,20 @@ def _await_future(fut: Future, deadline: float, *, label: str) -> str:
         )
         return "error"
 
+    if completed_at > deadline:
+        _log_health(
+            "health_timeout",
+            stage=label,
+            elapsed_ms=(time.perf_counter() - t0) * 1000,
+            outcome="error",
+            exception_class="TimeoutError",
+            timeout_sec=0,
+        )
+        return "error"
+    if status not in ("ok", "error"):
+        return "error"
+    return status
+
 
 def build_health() -> tuple[int, dict[str, str]]:
     """Start DB and secret checks concurrently; HTTP 200 only if both ok."""
@@ -448,8 +484,8 @@ def build_health() -> tuple[int, dict[str, str]]:
     secret_deadline = start + SECRET_TIMEOUT_SEC
 
     # Submit both before awaiting either (do not nest executor submissions inside workers).
-    db_fut = _executor.submit(check_database, db_deadline)
-    secret_fut = _executor.submit(check_secrets, secret_deadline)
+    db_fut = _submit_health_check(check_database, db_deadline)
+    secret_fut = _submit_health_check(check_secrets, secret_deadline)
 
     db_status = _await_future(db_fut, db_deadline, label="overall_db_check")
     secret_status = _await_future(secret_fut, secret_deadline, label="secret_check")

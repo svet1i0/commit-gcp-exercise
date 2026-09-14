@@ -150,6 +150,121 @@ class HealthContractTests(unittest.TestCase):
         self.assertEqual(body["db"], "ok")
         self.assertEqual(body["secret"], "error")
 
+    def test_equal_deadlines_slow_db_preserves_on_time_secret(self) -> None:
+        """Regression: awaiting a timed-out DB first must not discard an on-time secret."""
+        barrier = threading.Barrier(2)
+
+        def slow_db(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            time.sleep(0.45)
+            return "ok"
+
+        def fast_secret(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            return "ok"
+
+        # Budgets equal and long enough that barrier/scheduling overhead cannot
+        # push an immediate sibling completion past the deadline.
+        main.DB_TIMEOUT_SEC = 0.2
+        main.SECRET_TIMEOUT_SEC = 0.2
+        with mock.patch.object(main, "check_database", side_effect=slow_db), mock.patch.object(
+            main, "check_secrets", side_effect=fast_secret
+        ):
+            t0 = time.perf_counter()
+            code, body = main.build_health()
+            elapsed = time.perf_counter() - t0
+        self.assertEqual(code, 503)
+        self.assertEqual(body["db"], "error")
+        self.assertEqual(body["secret"], "ok")
+        # Wall clock ≈ max(budget), not sum of two full budgets.
+        self.assertLess(elapsed, 0.38)
+
+    def test_equal_deadlines_slow_secret_preserves_on_time_db(self) -> None:
+        barrier = threading.Barrier(2)
+
+        def fast_db(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            return "ok"
+
+        def slow_secret(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            time.sleep(0.45)
+            return "ok"
+
+        main.DB_TIMEOUT_SEC = 0.2
+        main.SECRET_TIMEOUT_SEC = 0.2
+        with mock.patch.object(main, "check_database", side_effect=fast_db), mock.patch.object(
+            main, "check_secrets", side_effect=slow_secret
+        ):
+            t0 = time.perf_counter()
+            code, body = main.build_health()
+            elapsed = time.perf_counter() - t0
+        self.assertEqual(code, 503)
+        self.assertEqual(body["db"], "ok")
+        self.assertEqual(body["secret"], "error")
+        self.assertLess(elapsed, 0.38)
+
+    def test_equal_deadlines_both_timeout(self) -> None:
+        barrier = threading.Barrier(2)
+
+        def slow(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            time.sleep(0.45)
+            return "ok"
+
+        main.DB_TIMEOUT_SEC = 0.2
+        main.SECRET_TIMEOUT_SEC = 0.2
+        with mock.patch.object(main, "check_database", side_effect=slow), mock.patch.object(
+            main, "check_secrets", side_effect=slow
+        ):
+            code, body = main.build_health()
+        self.assertEqual(code, 503)
+        self.assertEqual(body["db"], "error")
+        self.assertEqual(body["secret"], "error")
+
+    def test_late_completion_not_accepted_as_ok(self) -> None:
+        """A check that returns 'ok' after its deadline must still be reported as error."""
+        barrier = threading.Barrier(2)
+        release_slow = threading.Event()
+
+        def late_ok(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            release_slow.wait(timeout=2)
+            return "ok"
+
+        def fast_ok(_deadline: float | None = None) -> str:
+            barrier.wait(timeout=2)
+            return "ok"
+
+        main.DB_TIMEOUT_SEC = 0.05
+        main.SECRET_TIMEOUT_SEC = 2.0
+        with mock.patch.object(main, "check_database", side_effect=late_ok), mock.patch.object(
+            main, "check_secrets", side_effect=fast_ok
+        ):
+            # Let the waiter hit the DB deadline while the worker is still blocked.
+            def release_after_budget() -> None:
+                time.sleep(0.12)
+                release_slow.set()
+
+            threading.Thread(target=release_after_budget, daemon=True).start()
+            code, body = main.build_health()
+        self.assertEqual(code, 503)
+        self.assertEqual(body["db"], "error")
+        self.assertEqual(body["secret"], "ok")
+
+    def test_check_exception_independent(self) -> None:
+        def boom(_deadline: float | None = None) -> str:
+            raise RuntimeError("simulated-check-failure")
+
+        with mock.patch.object(main, "check_database", side_effect=boom), mock.patch.object(
+            main, "check_secrets", return_value="ok"
+        ):
+            code, body = main.build_health()
+        self.assertEqual(code, 503)
+        self.assertEqual(body["db"], "error")
+        self.assertEqual(body["secret"], "ok")
+        self.assertNotIn("simulated-check-failure", json.dumps(body))
+
     def test_both_checks_started_before_await(self) -> None:
         order: list[str] = []
         started = threading.Event()
@@ -226,11 +341,29 @@ class HealthContractTests(unittest.TestCase):
 
     def test_await_future_on_timeout(self) -> None:
         fut = mock.Mock()
+        fut.done.return_value = False
         fut.result.side_effect = FuturesTimeout()
         fut.cancel.return_value = True
         deadline = time.perf_counter() + 0.05
         self.assertEqual(main._await_future(fut, deadline, label="overall_db_check"), "error")
         fut.cancel.assert_called()
+
+    def test_await_accepts_on_time_result_retrieved_after_waiter_budget(self) -> None:
+        start = time.perf_counter()
+        deadline = start + 0.05
+        fut = mock.Mock()
+        fut.done.return_value = True
+        fut.result.return_value = ("ok", start + 0.01)
+        time.sleep(0.08)
+        self.assertEqual(main._await_future(fut, deadline, label="secret_check"), "ok")
+
+    def test_await_rejects_late_stamped_ok(self) -> None:
+        start = time.perf_counter()
+        deadline = start + 0.05
+        fut = mock.Mock()
+        fut.done.return_value = True
+        fut.result.return_value = ("ok", start + 0.2)
+        self.assertEqual(main._await_future(fut, deadline, label="overall_db_check"), "error")
 
     def test_request_time_secret_reads_every_health(self) -> None:
         calls: list[str] = []

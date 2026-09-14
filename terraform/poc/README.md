@@ -17,4 +17,6 @@ Uses `password_wo` / `secret_data_wo`. Do not use `password` / `secret_data` att
 
 ## Backend
 
-After bootstrap: `backend.tf` from `backend.tf.example`, prefix `poc`.
+**This POC:** remote state is already configured (`backend.tf` → `gs://meridian-poc-ss-260913-tfstate`, prefix `poc`). Run `terraform init` then `plan`/`apply` from this directory only when authorized.
+
+**Fresh project:** after bootstrap, copy `backend.tf.example` → `backend.tf` with prefix `poc`, then `terraform init`.

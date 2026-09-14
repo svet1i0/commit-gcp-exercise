@@ -5,6 +5,7 @@
 Runs on push/PR to `main`:
 
 - application unit tests
+- publication-safety scan (`scripts/check_publication_safety.py`)
 - `terraform fmt -check`
 - `terraform validate` for bootstrap and poc (`-backend=false`)
 - linux/amd64 container build without push

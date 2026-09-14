@@ -11,10 +11,14 @@ Creates the GCS remote-state bucket for this exercise.
   - versioning enabled
   - `force_destroy=true` for short-lived POC teardown
 
-## Flow
+## Existing Meridian POC
+
+Bootstrap **has already been applied**. State bucket: `gs://meridian-poc-ss-260913-tfstate`. Do not re-apply or re-migrate state for routine POC updates — use `terraform/poc` with the existing remote backend.
+
+## Fresh environment only
 
 1. `terraform init` (local state)
-2. `terraform apply` (after **APPLY BOOTSTRAP**)
+2. `terraform apply` (explicit authorization required)
 3. Copy `backend.tf.example` → `backend.tf` with bucket name
 4. `terraform init -migrate-state`
 
