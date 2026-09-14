@@ -80,6 +80,28 @@ See [ACCESS-MODEL.md](ACCESS-MODEL.md).
 
 **Alternatives rejected:** individual IAM grants for every employee/vendor; broad organization-level roles; creating Google accounts manually for every external user; conflating human Workforce federation with workload WIF; inventing confirmation of principal type.
 
+## Developer database access (group-first) — DOCUMENTED ONLY
+
+- Production direction: grant IAM to **customer-confirmed Google Groups**, not individual users.
+- Four layers apply independently: identity membership → GCP IAM → network connectivity → PostgreSQL GRANTs.
+- Proposed Studio role: `roles/cloudsql.studioUser` (do not add redundant `roles/cloudsql.instanceUser`).
+- Local tools require an approved private network path; Auth Proxy alone is insufficient.
+- **No developer group IAM or PostgreSQL privileges are deployed in this POC.**
+
+See [ACCESS-MODEL.md](ACCESS-MODEL.md).
+
+## Data migration paths — schema vs bulk vs DMS
+
+| Path | Mechanism | Status |
+|------|-----------|--------|
+| Versioned schema DDL | Cloud Run Job `meridian-migrate` | **IMPLEMENTED** |
+| Large SQL dump import | Dedicated private GCS + Cloud SQL import | **PLANNED — NOT IMPLEMENTED** |
+| Low-downtime / CDC | Database Migration Service | **PLANNED — SOURCE DETAILS AND CUSTOMER APPROVAL REQUIRED** |
+
+Large-data method depends on Q9–Q11 and source constraints. No migration-staging bucket or DMS resources exist.
+
+See [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md).
+
 ## Health reliability and concurrency (POC)
 
 - Process-scoped Cloud SQL Connector (`lazy`) + process-scoped Secret Manager client; short-lived DB connections and request-time secret payload reads every `/health`.

@@ -1041,7 +1041,20 @@ Proceed now through the remaining Prompt 3 phases and STOP only on a still-appli
 - Migration execution succeeded with `001_init.sql` skipped.
 - Live health: sequential 12/12 and concurrent 8/8 HTTP 200 with the five-field contract.
 - Publication-safety CI guard added; personal Gmail-style addresses removed from published reachable history.
-- Final recorded active time for submission: **3 hours 32 minutes (212 minutes total)**, confirmed as `FINAL_ACTIVE_MINUTES=212`. Clarification email already sent earlier; not resent. Bonus WIF is disabled, not deployed, not tested, and not implemented.
+- `EARLIER_TECHNICAL_CLOSEOUT_BASELINE_MINUTES=212` (Prompt 3 / 3A technical closeout). Clarification email already sent earlier; not resent. Bonus WIF is disabled, not deployed, not tested, and not implemented.
+
+## Group-ready access and data-migration documentation (post-closeout documentation refinement)
+
+An earlier technical closeout baseline recorded **212 active minutes**. Before final delivery, an additional documentation refinement was completed. The documentation work is recorded as an **approved 20-minute estimate** because it was not directly measured, and the final reconciliation added **1 measured minute**. The resulting final active time is **233 minutes (03:53)**. The **final submission email had not been sent** at the time of this documentation update.
+
+| Item | Detail |
+|------|--------|
+| **Work** | Expanded [ACCESS-MODEL.md](ACCESS-MODEL.md) with four-layer developer access; created [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md); minimal cross-links in README, DECISIONS, ASSUMPTIONS |
+| **Infrastructure** | **None** — documentation only; no Terraform apply, IAM grants, buckets, DMS, or Job execution |
+| **Rejected: staging bucket now** | AI suggested provisioning a migration-staging GCS bucket before dump size, retention, and audit requirements are confirmed — rejected as speculative cost and attack surface |
+| **Rejected: broad developer DDL/DML GRANTs** | AI suggested example PostgreSQL privileges for a developer group before Meridian confirms developer duties — rejected; privileges must follow an approved access model |
+
+WIF remains bonus, disabled, not deployed, not tested, and not implemented.
 
 ## Estimate of AI-generated code
 

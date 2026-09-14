@@ -40,13 +40,13 @@ CI is validation-only (tests, publication-safety, `terraform fmt`/`validate`, Do
 
 **Measured (2026-09-13):** sequential `/health` **12/12** HTTP 200 (`db=ok`, `secret=ok`, five fields) starting **15:44:38Z**. Concurrent burst **8/8** HTTP 200 (min 0.231s, median 2.319s, p95 4.387s, max 4.395s). Migration job `meridian-migrate-dwhvd` succeeded; `001_init.sql` skipped. New-revision evidence: `DEPLOYMENT_ROLLOUT` / `AUTOSCALING` startup logs — not claimed as a proven idle scale-from-zero cold start under all conditions.
 
-## Human access
+## Human access and data migration
 
-Viewer for `gcp-devops@comm-it.cloud`. Principal type **unconfirmed**. **Working assumption (deployed):** `group:gcp-devops@comm-it.cloud` → `roles/viewer`. Login not claimed.
+Viewer for `gcp-devops@comm-it.cloud`. Principal type **unconfirmed**. **Working assumption (deployed):** `group:gcp-devops@comm-it.cloud` → `roles/viewer`. Login not claimed. Group-first developer database access, Cloud SQL Studio, VPN/local connectivity, large dump import, and DMS are **documented only — not deployed** ([ACCESS-MODEL.md](ACCESS-MODEL.md), [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md)).
 
 ## Time spent
 
-**Final active time: 3 hours 32 minutes (212 minutes total).** Confirmed as `FINAL_ACTIVE_MINUTES=212`. Remaining under the five-hour hard stop: **1 hour 28 minutes (88 minutes)** for human review and demonstration prep. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
+**Time spent: 03:53 (233 minutes).** `FINAL_ACTIVE_MINUTES=233`. Remaining under the five-hour hard stop: **67 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
 
 ## With more time
 
