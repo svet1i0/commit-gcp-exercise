@@ -8,19 +8,24 @@ Google Groups, Cloud Identity groups, and **Workforce Identity Federation are NO
 
 ---
 
-## Mandatory POC requirement (unchanged)
+## Mandatory POC requirement (role unchanged; principal-type conflict)
 
 | Item | Value |
 |------|--------|
 | Address | `gcp-devops@comm-it.cloud` |
 | Role | `roles/viewer` |
 | Scope | project `meridian-poc-ss-260913` |
-| Source type | **Unspecified** (not user / group / service account) |
-| Working assumption | `group:gcp-devops@comm-it.cloud` |
+| Commit confirmation | Individual Google/Cloud Identity **user** |
+| Google IAM principal type | **group** (API-enforced) |
+| Deployed member | `group:gcp-devops@comm-it.cloud` |
 
-Rationale for the working assumption: a single functional team email is supplied; principal type was not confirmed; group-first access is more maintainable for a team reviewer identity. **Not** “confirmed Google Group.” Successful IAM apply does not prove membership or login. This POC does not create or administer the group.
+Attempted correction to `user:gcp-devops@comm-it.cloud` failed with Cloud IAM HTTP 400: principal is of type group and must use the `group:` prefix. The `group:` Viewer binding was restored immediately so the mandatory reviewer grant was not left absent.
 
-Terraform input `reviewer_member` can switch `user:` → `group:` without redesigning the IAM layer.
+Successful IAM apply does **not** prove interactive login. This repository does not request, store, or use the reviewer’s credentials.
+
+Terraform input currently required for a successful apply: `reviewer_member = "group:gcp-devops@comm-it.cloud"`.
+
+Production developer and operational access remains **group-first** (Level 2 below).
 
 ---
 
@@ -54,15 +59,13 @@ WORKLOAD IDENTITIES (separate)
 
 ## Three levels of human access
 
-### Level 1 — Direct user IAM (exception / switchable)
+### Level 1 — Direct user IAM (exception)
 
-Appropriate for emergency/time-limited access or when principal type is confirmed as a user.
+Appropriate for emergency/time-limited access or when Google IAM accepts the address as a `user:` principal.
 
-Example alternate input (only if directed): `user:gcp-devops@comm-it.cloud` → `roles/viewer`
+**This POC:** Commit describes `gcp-devops@comm-it.cloud` as an individual user, but Google IAM currently accepts only `group:` for that email. Deployed grant is therefore Level-2-shaped (`group:…` → `roles/viewer`) despite the individual-user intent. Do not treat per-person production grants as the default for developer teams.
 
-This POC’s exercise grant uses the **group:** working assumption below (Level 2 style), not a confirmed user principal.
-
-Limitations of direct-user grants: poor lifecycle scalability; IAM policy grows with users; harder offboarding and audit.
+Limitations of direct-user grants at scale: poor lifecycle scalability; IAM policy grows with users; harder offboarding and audit.
 
 ### Level 2 — Access groups (recommended default)
 
@@ -234,7 +237,7 @@ GCP IAM login (Studio or IAM DB auth) does **not** automatically grant table or 
 | Layer | Implemented in POC? | Notes |
 |-------|----------------------|-------|
 | Identity membership (developer group) | **NO** | Customer must confirm group identity |
-| GCP IAM (Studio / Job execute / client) | **NO** for developers | Reviewer Viewer only (`group:gcp-devops@…` working assumption) |
+| GCP IAM (Studio / Job execute / client) | **NO** for developers | Exercise reviewer Viewer only (`group:gcp-devops@…` — see principal-type conflict); login not claimed |
 | Network (VPN / local TCP to private SQL) | **NO** | Job executes inside GCP |
 | PostgreSQL GRANTs for developers | **NO** | Migrator SA only; `app_user` DML-only after migrate |
 

@@ -14,7 +14,7 @@
 | A-010 | Synthetic data and token only | No customer production data | Change data handling | DOCUMENTED |
 | A-011 | Org parent `626616300793` | Created during Free Trial/Cloud Identity | — | DOCUMENTED |
 | A-012 | EU residency = configurable data resources in `europe-west1` | Not all control-plane metadata | Wording | DOCUMENTED |
-| A-013 | Reviewer principal type unresolved; **working assumption** `group:gcp-devops@comm-it.cloud` (not confirmed as a Google Group) | Exercise lists functional team email only; group-first access is more maintainable; Q34 unanswered | Switch input to `user:` only if Commit directs | DOCUMENTED |
+| A-013 | Commit states `gcp-devops@comm-it.cloud` is an individual user; Cloud IAM API types the same principal as a **group** and rejects `user:` (HTTP 400). Deployed Viewer binding remains `group:gcp-devops@comm-it.cloud`. Direct-user production grants stay discouraged; group-first remains the team model. IAM apply ≠ interactive login proof | Identity-directory mismatch between Commit confirmation and Google IAM principal type | Binding unusable if Commit requires `user:` without Google-side principal retype | DOCUMENTED |
 | A-014 | Initial apply via local ADC; WIF plan-only Actions intended but **NOT IMPLEMENTED** | Org policy bans SA keys; time priority deferred bonus | Add WIF later | DOCUMENTED |
 | A-015 | Public `/health` with dependency checks | Exercise requirement | Split in production | DOCUMENTED |
 | A-016 | Production group names / Workforce Identity Federation are recommendations only — **not implemented**; POC may bind an **externally managed** group email without creating/administering that group | Time-boxed POC; no customer identity directory control | Create groups/federation later | DOCUMENTED |

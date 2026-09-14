@@ -1067,6 +1067,17 @@ WIF remains bonus, disabled, not deployed, not tested, and not implemented.
 | **Deploy** | Functional source `690d81c…`; image `sha256:48a8d155…`; revision `meridian-api-00005-v7m` @ 100%. Previous revision `meridian-api-00004-sgb` / digest `sha256:9fcbf3d8…` retained for recovery. Migration Job image updated to the same digest; Job **not** executed. |
 | **Final time** | `FINAL_ACTIVE_MINUTES=244` (04:04). Starting total before resume **235**; remediation **+9** measured/ceiled. Presentation estimate excluded. |
 
+## Reviewer principal correction (user-confirmed intent; Google IAM conflict)
+
+| Item | Detail |
+|------|--------|
+| **Commit confirmation** | `gcp-devops@comm-it.cloud` is an individual Google/Cloud Identity user |
+| **Attempted IAM** | Remove `group:…` / add `user:…` → `roles/viewer` |
+| **Google IAM result** | HTTP 400: principal is of type **group**; must use `group:gcp-devops@comm-it.cloud` |
+| **Recovery** | Restored `group:gcp-devops@comm-it.cloud` → `roles/viewer` immediately after the failed `user:` create (group destroy had already succeeded) |
+| **Deployed now** | `group:gcp-devops@comm-it.cloud` only — no dual binding |
+| **Login** | Interactive reviewer login **not** claimed from our side |
+
 ## Estimate of AI-generated code
 
 Roughly **70–85%** of repository file text was AI-drafted in Cursor; all Terraform and health-contract behavior reviewed and adjusted by Svetoslav before apply/publish.

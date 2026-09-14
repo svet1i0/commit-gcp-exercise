@@ -42,11 +42,11 @@ CI is validation-only (tests, publication-safety, `terraform fmt`/`validate`, Do
 
 ## Human access and data migration
 
-Viewer for `gcp-devops@comm-it.cloud`. Principal type **unconfirmed**. **Working assumption (deployed):** `group:gcp-devops@comm-it.cloud` → `roles/viewer`. Login not claimed. Group-first developer database access, Cloud SQL Studio, VPN/local connectivity, large dump import, and DMS are **documented only — not deployed** ([ACCESS-MODEL.md](ACCESS-MODEL.md), [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md)).
+Viewer for `gcp-devops@comm-it.cloud` → `roles/viewer` (deployed). **Principal-type conflict:** Commit confirmed this address as an individual Google/Cloud Identity **user**, but the Cloud IAM API rejects `user:gcp-devops@comm-it.cloud` with HTTP 400 (“Principal … is of type group”; requires `group:`). Live binding therefore remains **`group:gcp-devops@comm-it.cloud`**. Interactive login is **not** claimed from our side. Group-first access remains the recommended production model for developer and operational teams. Cloud SQL Studio, VPN/local connectivity, large dump import, and DMS are **documented only — not deployed** ([ACCESS-MODEL.md](ACCESS-MODEL.md), [DATABASE-MIGRATION.md](DATABASE-MIGRATION.md)).
 
 ## Time spent
 
-**Time spent: 04:04 (244 minutes).** `FINAL_ACTIVE_MINUTES=244`. Remaining under the five-hour hard stop: **56 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
+**Time spent: 04:09 (249 minutes).** . Remaining under the five-hour hard stop: **51 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented. `FINAL_ACTIVE_MINUTES=244`. Remaining under the five-hour hard stop: **56 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
 
 ## With more time
 

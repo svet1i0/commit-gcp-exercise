@@ -107,9 +107,10 @@ variable "reviewer_member" {
   description = <<-EOT
     Exercise reviewer IAM member for project roles/viewer (grant gate).
     Empty skips the exercise-reviewer binding.
-    Working assumption for this POC: group:gcp-devops@comm-it.cloud
-    (principal type not confirmed by Commit; group-first practice).
-    Switch to user:gcp-devops@comm-it.cloud by changing only this input if directed.
+    Commit confirms gcp-devops@comm-it.cloud as an individual user, but Google
+    Cloud IAM currently types that principal as a group and rejects user:.
+    Successful apply for this POC uses: group:gcp-devops@comm-it.cloud
+    Group-first remains the recommended production model for teams.
   EOT
   default     = ""
 

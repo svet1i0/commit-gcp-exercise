@@ -59,11 +59,15 @@ Stage B: push image by digest, set `enable_workloads=true`.
 
 ## Reviewer (POC)
 
-Mandatory: `gcp-devops@comm-it.cloud` → project `roles/viewer`. Source does **not** specify principal type (user vs group).
+Mandatory: `gcp-devops@comm-it.cloud` → project `roles/viewer`.
 
-**Working assumption (not customer-confirmed):** `group:gcp-devops@comm-it.cloud` via `reviewer_member` → additive `google_project_iam_member.human_access`. Reason: functional team address + group-first access practice. Successful IAM apply does **not** prove group membership or reviewer login.
+**Commit confirmation:** address is an individual Google/Cloud Identity user (not intended as a team Google Group).
 
-This project does **not** create or administer the Google Group. Switching to `user:` would be an input-only change if Commit directs.
+**Google Cloud IAM fact (verified on apply):** requesting `user:gcp-devops@comm-it.cloud` returns HTTP 400 — principal is of type **group** and must be granted as `group:gcp-devops@comm-it.cloud`. The attempted `user:` binding was **not** created. The temporary removal of `group:` was restored so Viewer access was not left broken.
+
+**Deployed:** `group:gcp-devops@comm-it.cloud` → `roles/viewer` via `reviewer_member`. Do not retain a failed `user:` binding. Successful IAM apply does **not** prove interactive reviewer login.
+
+**Production direction (unchanged):** group-first access for developer and operational teams (see D-023). Treat any true individual-user grant as an exception only after Google IAM accepts `user:` for that principal.
 
 See [ACCESS-MODEL.md](ACCESS-MODEL.md).
 
@@ -71,14 +75,14 @@ See [ACCESS-MODEL.md](ACCESS-MODEL.md).
 
 **Decision:**
 
-- POC reviewer grant uses documented `group:` working assumption for the exercise email.
-- Production access is **group-first** (Level 2); identity membership managed outside project IAM.
+- POC exercise reviewer Viewer grant is deployed as **`group:gcp-devops@comm-it.cloud`** because that is the only principal type Google IAM accepts for this email, despite Commit’s individual-user confirmation.
+- Production access remains **group-first** (Level 2); identity membership managed outside project IAM.
 - **Workforce Identity Federation** is the preferred larger-scale evolution for external enterprise identities (Level 3) — **NOT IMPLEMENTED**.
 - Workload Identity Federation (GitHub → SA) remains separate from human federation — **NOT IMPLEMENTED**.
 
-**Rationale:** scalable onboarding/offboarding; stable IAM policies; auditability; separation of identity lifecycle from cloud resource deployment; least privilege; multi-company support.
+**Rationale:** scalable onboarding/offboarding for teams; stable IAM policies; auditability; least privilege. The exercise email’s Google-side principal type must match the IAM member prefix or the grant fails.
 
-**Alternatives rejected:** individual IAM grants for every employee/vendor; broad organization-level roles; creating Google accounts manually for every external user; conflating human Workforce federation with workload WIF; inventing confirmation of principal type.
+**Alternatives rejected:** forcing `user:` after API rejection (breaks apply); leaving the project with no Viewer grant after a failed switch; inventing interactive login proof.
 
 ## Developer database access (group-first) — DOCUMENTED ONLY
 
