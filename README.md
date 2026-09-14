@@ -46,7 +46,7 @@ Viewer for `gcp-devops@comm-it.cloud` → `roles/viewer` (deployed). **Principal
 
 ## Time spent
 
-**Time spent: 04:09 (249 minutes).** . Remaining under the five-hour hard stop: **51 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented. `FINAL_ACTIVE_MINUTES=244`. Remaining under the five-hour hard stop: **56 minutes**. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
+**Time spent: 04:09 (249 minutes).** Remaining under the five-hour hard stop: **51 minutes**. `FINAL_ACTIVE_MINUTES=249`. Bonus WIF / authenticated Terraform PR plan is disabled, not deployed, not tested, and not implemented.
 
 ## With more time
 
